@@ -1,5 +1,8 @@
 import numpy as np
 from typing import Optional, Dict, Tuple
+import torch
+# If nn.py is in the same directory, you can import the necessary functions and classes:
+from nn import GARCHParameterNN, predict_parameters
 
 class CovarianceForecaster:
     """
@@ -39,64 +42,37 @@ class CovarianceForecaster:
         self.forecast_horizon = forecast_horizon
 
 
-    def fit_all_univariate_garch(self) -> None:
+    def fit_all_univariate_garch_nn(self, nn_model_path="garch_nn_model.pth"):
         """
-        Fits a naive GARCH(1,1) model to each asset's return series independently.
-        Stores parameters (omega, alpha, beta) in self.garch_params[i].
+        Fit each asset’s GARCH(1,1) parameters using the trained ANN.
+        For each asset, we compute:
+          - σ²_emp: the in-sample variance of the asset returns,
+          - Γ₄,emp: the empirical fourth standardized moment, computed as E[r⁴] / (E[r²])².
         
-        This uses a minimal sum-of-squared-errors approach for demonstration.
-        For real production, consider MLE or libraries like 'arch'.
+        Then, we use these as inputs to the NN to predict α₁ and subsequently compute β₁ and α₀.
+        The fitted parameters are stored in self.garch_params.
         """
+        # Assume the NN was trained on two input features: [σ²_emp, Γ₄,emp]
+        input_dim = 2
+        model = GARCHParameterNN(input_dim)
+        model.load_state_dict(torch.load(nn_model_path, map_location=torch.device('cpu')))
+        model.eval()
+
         for i in range(self.n_assets):
             r = self.returns[:, i]
-            # Fit naive GARCH(1,1) and store results
-            omega, alpha, beta = self._fit_garch_naive(r)
-            self.garch_params[i] = (omega, alpha, beta)
+            sigma2_emp = np.var(r)
+            E_r2 = np.mean(r**2)
+            E_r4 = np.mean(r**4)
+            gamma4_emp = E_r4 / (E_r2**2) if E_r2 != 0 else 3.0  # default to 3 if variance is zero
 
-    def _fit_garch_naive(self, series: np.ndarray) -> Tuple[float, float, float]:
-        """
-        Naive parameter estimation for GARCH(1,1) by a simple grid search or 
-        sum-of-squares method (for illustration only).
+            # Prepare input features as a 2D array (one sample)
+            input_features = np.array([[sigma2_emp, gamma4_emp]])
+            alpha0, alpha1, beta1 = predict_parameters(model, input_features, gamma4_emp, sigma2_emp)
+            
+            # Store parameters as a tuple (α₀, α₁, β₁) for asset i
+            # (You might wish to extract scalars from the returned arrays if needed.)
+            self.garch_params[i] = (float(alpha0[0]), float(alpha1[0]), float(beta1[0]))
 
-        GARCH(1,1): sigma_t^2 = omega + alpha*r_{t-1}^2 + beta*sigma_{t-1}^2
-
-        Returns
-        -------
-        (omega, alpha, beta) : tuple
-            Fitted parameters for this asset.
-        """
-        # Hyper-parameters for the naive grid search
-        # (In reality you might do a more robust optimization.)
-        grid_omega = np.linspace(1e-6, 1e-3, 5)
-        grid_alpha = np.linspace(0.01, 0.3, 5)
-        grid_beta = np.linspace(0.3, 0.98, 5)
-
-        best_loss = np.inf
-        best_params = (0.0, 0.0, 0.0)
-
-        # We'll simulate sigma_t^2 forward for each (omega, alpha, beta)
-        # and measure sum of squared difference between sigma_t^2 and r_t^2.
-        # This is extremely naive—just to illustrate the concept.
-        for w in grid_omega:
-            for a in grid_alpha:
-                for b in grid_beta:
-                    if a + b < 0.999:  # stationarity check
-                        # Initialize
-                        T = len(series)
-                        sigma2 = np.zeros(T)
-                        sigma2[0] = np.var(series)  # start guess
-                        
-                        # Forward pass
-                        for t in range(1, T):
-                            sigma2[t] = w + a*series[t-1]**2 + b*sigma2[t-1]
-
-                        # Simple SSE loss
-                        loss = np.mean((series**2 - sigma2)**2)
-                        if loss < best_loss:
-                            best_loss = loss
-                            best_params = (w, a, b)
-
-        return best_params
 
     def forecast_variances(self) -> np.ndarray:
         """
