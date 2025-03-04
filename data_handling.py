@@ -11,6 +11,14 @@ class PolygonDataHandler:
         """
         self.api_key = api_key
 
+    # In data_handling.py, add a helper function:
+    def slice_data_by_date(df, start_date, end_date):
+        """
+        Returns a slice of the DataFrame between start_date and end_date.
+        """
+        return df.loc[start_date:end_date]
+
+
     def fetch_data(self, ticker, start_date, end_date, multiplier=1, timespan='day'):
         """
         Retrieve aggregated price data from polygon.io for a given ticker and date range.

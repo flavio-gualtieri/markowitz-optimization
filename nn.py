@@ -40,8 +40,7 @@ def compute_beta(alpha1, gamma4_emp):
     eps = 1e-8
     denominator = (1 - 6 * (alpha1 ** 2) + eps)
     term = (1 - 2 * (alpha1 ** 2) / denominator) * (gamma4_emp - 3)
-    # Ensure term is nonnegative before taking sqrt
-    term = np.maximum(term, 0)
+    term = np.maximum(term, 0)  # ensure nonnegative before sqrt
     beta = np.sqrt(term) - alpha1
     return beta
 
@@ -58,10 +57,25 @@ def compute_alpha0(alpha1, beta1, sigma2_emp):
 # -------------------------------
 # Training Function for the NN
 # -------------------------------
-def train_model(train_features, train_targets, input_dim, num_epochs=5000, learning_rate=0.01, patience=100):
+def train_model(train_features, train_targets, input_dim, num_epochs=5000, learning_rate=0.01, patience=100, save_path=None):
+    """
+    Train the GARCHParameterNN model and optionally save its state using a unique filename.
+    
+    Parameters:
+        train_features (np.ndarray): Input features for training.
+        train_targets (np.ndarray): Target values (true α₁).
+        input_dim (int): Dimensionality of input features.
+        num_epochs (int): Maximum number of training epochs.
+        learning_rate (float): Learning rate for the optimizer.
+        patience (int): Number of epochs to wait for improvement before early stopping.
+        save_path (str, optional): If provided, saves the model state_dict to this path.
+    
+    Returns:
+        model: The trained neural network.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = GARCHParameterNN(input_dim).to(device)
-    criterion = nn.MSELoss()  # Least squares loss
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     train_features_tensor = torch.tensor(train_features, dtype=torch.float32).to(device)
@@ -95,6 +109,12 @@ def train_model(train_features, train_targets, input_dim, num_epochs=5000, learn
             print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {current_loss:.6f}")
     
     model.load_state_dict(best_model_state)
+    
+    # Save the model state to a stock-specific file if a save_path is provided.
+    if save_path is not None:
+        torch.save(model.state_dict(), save_path)
+        print(f"Model saved to {save_path}")
+    
     return model
 
 # -------------------------------
@@ -102,11 +122,11 @@ def train_model(train_features, train_targets, input_dim, num_epochs=5000, learn
 # -------------------------------
 def predict_parameters(model, input_features, gamma4_emp, sigma2_emp):
     """
-    Given a trained model and a feature array (e.g. [σ²_emp, Γ₄,emp]),
+    Given a trained model and input features (e.g., [σ²_emp, Γ₄,emp]),
     predict α₁ and compute β₁ and α₀.
     
     Returns:
-        alpha0, alpha1, beta
+        alpha0, alpha1, beta: Predicted GARCH parameters.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
@@ -124,31 +144,29 @@ def predict_parameters(model, input_features, gamma4_emp, sigma2_emp):
 # -------------------------------
 if __name__ == "__main__":
     # For demonstration, we generate dummy training data.
-    # Suppose each training sample consists of empirical moments:
-    #   - σ²_emp (second moment)
-    #   - Γ₄,emp (fourth standardized moment; note for a normal distribution Γ₄ = 3)
-    # and the target is the true α₁.
     num_samples = 1000
     sigma2_emp = np.random.uniform(0.0001, 0.01, num_samples)
     gamma4_emp = np.random.uniform(3.1, 5.0, num_samples)
     true_alpha1 = np.random.uniform(0.0, 0.3, num_samples)
     
-    # Feature vector: here we use [σ²_emp, Γ₄,emp]
+    # Feature vector: [σ²_emp, Γ₄,emp]
     train_features = np.column_stack((sigma2_emp, gamma4_emp))
-    train_targets = true_alpha1  # In practice, these targets might be computed via MLE or simulation
+    train_targets = true_alpha1  # Replace with targets from an estimator in practice
     
-    # Train the network
-    model = train_model(train_features, train_targets, input_dim=train_features.shape[1])
+    # For a specific stock, say "AAPL", save the model under a unique name.
+    stock_symbol = "AAPL"
+    save_filename = f"garch_nn_{stock_symbol}.pth"
+    
+    # Train the network and save it to a stock-specific file
+    model = train_model(train_features, train_targets, input_dim=train_features.shape[1], save_path=save_filename)
     print("Training completed.")
-    
-    # Save the trained model for later use in the covariance forecaster
-    torch.save(model.state_dict(), "garch_nn_model.pth")
     
     # Example prediction on new data:
     new_sigma2 = np.array([0.005])
     new_gamma4 = np.array([3.8])
     new_features = np.column_stack((new_sigma2, new_gamma4))
     alpha0, alpha1, beta = predict_parameters(model, new_features, new_gamma4, new_sigma2)
+    
     print("Predicted Parameters:")
     print("α₀:", alpha0)
     print("α₁:", alpha1)
