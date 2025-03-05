@@ -81,7 +81,7 @@ def train_garch_nn_for_asset(asset_returns, stock_symbol, window_size=30, target
         targets.append(target_alpha1)
     features = np.array(features)
     targets = np.array(targets)
-    save_filename = f"garch_nn_{stock_symbol}.pth"
+    save_filename = f"models/garch_nn_{stock_symbol}.pth"
     model = train_model(features, targets, input_dim=2, num_epochs=500, learning_rate=0.01, patience=50, save_path=save_filename)
     recent_data = asset_returns[-window_size:]
     latest_sigma2 = np.var(recent_data)
