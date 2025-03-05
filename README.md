@@ -63,14 +63,8 @@ The project is organized into six scripts:
 3. **Obtain API Key:**
     For data retrieval, register at [polygon.io](https://polygon.io) to obtain an API key. Then update the API key in `data_handling.py`.
 
-4. **Train the Neural Network:**
-    Before running the portfolio rebalancing, ensure the neural network is trained. Run:
-    ```bash
-    python nn.py
-    ```
-    This will generate a `garch_nn_model.pth` file used in forecasting.
 
-5. **Run the Application:**
+4. **Run the Application:**
     Start the Streamlit application to simulate the backtest and view visualizations:
     ```bash
     streamlit run app.py
